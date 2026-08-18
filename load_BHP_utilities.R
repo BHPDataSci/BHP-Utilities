@@ -2,18 +2,18 @@ LoadBHPUtilities <- function(
     path = NULL,
     envir = globalenv(),
     recursive = FALSE,
-    verbose = interactive()
+    verbose = interactive(),
+    repository = "BHPDataSci/BHP-Utilities",
+    ref = "main"
 ) {
 
-  
- # source( "https://raw.githubusercontent.com/BHPDataSci/BHP-Utilities/main/load_BHP_utilities.R")
-  #------------------------------------------------------------
-  # Locate the BHP-Utilities repository
-  #------------------------------------------------------------
+  # source("https://raw.githubusercontent.com/BHPDataSci/BHP-Utilities/main/load_BHP_utilities.R")
+
+  source_type <- "Local"
+  temporary_directory <- NULL
 
   if (is.null(path)) {
 
-    # Are we currently inside the repository?
     if (dir.exists("R") &&
         (file.exists("README.md") || file.exists(".git"))) {
 
@@ -28,14 +28,62 @@ LoadBHPUtilities <- function(
   }
 
   if (!nzchar(path)) {
-    stop(
-      "Unable to locate the BHP-Utilities repository.\n\n",
-      "You can either:\n",
-      "  • Run this from inside the BHP-Utilities repository\n",
-      "  • Supply the 'path' argument\n",
-      "  • Set the BHP_UTILITIES_PATH environment variable",
-      call. = FALSE
+
+    source_type <- "GitHub"
+    temporary_directory <- tempfile("BHP-Utilities-")
+    dir.create(temporary_directory, recursive = TRUE)
+    on.exit(unlink(temporary_directory, recursive = TRUE), add = TRUE)
+
+    fn_Archive <- file.path(temporary_directory, "repository.zip")
+    archive_url <- paste0(
+      "https://github.com/",
+      repository,
+      "/archive/",
+      ref,
+      ".zip"
     )
+
+    tryCatch(
+      utils::download.file(
+        url = archive_url,
+        destfile = fn_Archive,
+        mode = "wb",
+        quiet = !verbose
+      ),
+      error = function(e) {
+        stop(
+          "Unable to download BHP Utilities from GitHub.\n\n",
+          "Repository: ", repository, "\n",
+          "Reference: ", ref, "\n\n",
+          conditionMessage(e),
+          call. = FALSE
+        )
+      }
+    )
+
+    utils::unzip(
+      zipfile = fn_Archive,
+      exdir = temporary_directory
+    )
+
+    extracted_directories <- list.dirs(
+      path = temporary_directory,
+      full.names = TRUE,
+      recursive = FALSE
+    )
+
+    repository_directories <- extracted_directories[
+      dir.exists(file.path(extracted_directories, "R"))
+    ]
+
+    if (length(repository_directories) != 1L) {
+      stop(
+        "The downloaded GitHub archive does not contain one repository-level R directory.",
+        call. = FALSE
+      )
+    }
+
+    path <- repository_directories[[1]]
   }
 
   path <- normalizePath(path, winslash = "/", mustWork = TRUE)
@@ -50,51 +98,51 @@ LoadBHPUtilities <- function(
     )
   }
 
-  #------------------------------------------------------------
-  # Get Git information
-  #------------------------------------------------------------
+  if (source_type == "Local") {
 
-  oldwd <- getwd()
-  on.exit(setwd(oldwd), add = TRUE)
-  setwd(path)
-
-  version <- tryCatch(
-    system2(
-      "git",
-      c("describe", "--tags", "--abbrev=0"),
-      stdout = TRUE,
-      stderr = FALSE
-    ),
-    error = function(e) character()
-  )
-
-  if (length(version) == 0) {
-    version <- "Development"
-  }
-
-  commit <- tryCatch(
-    system2(
-      "git",
-      c("rev-parse", "--short", "HEAD"),
-      stdout = TRUE,
-      stderr = FALSE
-    ),
-    error = function(e) NA_character_
-  )
-
-  modified <- tryCatch({
-    status <- system2(
-      "git",
-      c("status", "--porcelain"),
-      stdout = TRUE,
-      stderr = FALSE
+    version <- tryCatch(
+      suppressWarnings(
+        system2(
+          "git",
+          c("-C", shQuote(path), "describe", "--tags", "--abbrev=0"),
+          stdout = TRUE,
+          stderr = FALSE
+        )
+      ),
+      error = function(e) character()
     )
-    length(status) > 0
-  }, error = function(e) FALSE)
 
-  #------------------------------------------------------------
-  # Locate R files
-  #------------------------------------------------------------
+    if (length(version) == 0) {
+      version <- "Development"
+    }
+
+    commit <- tryCatch(
+      system2(
+        "git",
+        c("-C", shQuote(path), "rev-parse", "--short", "HEAD"),
+        stdout = TRUE,
+        stderr = FALSE
+      ),
+      error = function(e) NA_character_
+    )
+
+    modified <- tryCatch({
+      status <- system2(
+        "git",
+        c("-C", shQuote(path), "status", "--porcelain"),
+        stdout = TRUE,
+        stderr = FALSE
+      )
+      length(status) > 0
+    }, error = function(e) FALSE)
+
+  } else {
+
+    version <- ref
+    commit <- if (grepl("^[[:xdigit:]]{7,40}$", ref)) ref else NA_character_
+    modified <- FALSE
+
+  }
 
   r_files <- sort(
     list.files(
@@ -114,10 +162,6 @@ LoadBHPUtilities <- function(
 
     return(invisible(NULL))
   }
-
-  #------------------------------------------------------------
-  # Source files
-  #------------------------------------------------------------
 
   for (file in r_files) {
 
@@ -144,10 +188,6 @@ LoadBHPUtilities <- function(
 
   }
 
-  #------------------------------------------------------------
-  # Startup message
-  #------------------------------------------------------------
-
   if (verbose) {
 
     cat(
@@ -155,6 +195,7 @@ LoadBHPUtilities <- function(
       "=========================================\n",
       " BHP Utilities\n",
       "=========================================\n",
+      " Source  : ", source_type, "\n",
       " Version : ", version, "\n",
       " Commit  : ", commit,
       if (modified) " (modified)" else "",
@@ -173,7 +214,10 @@ LoadBHPUtilities <- function(
       modified = modified,
       files = basename(r_files),
       n_files = length(r_files),
-      path = path
+      path = if (source_type == "Local") path else NA_character_,
+      source = source_type,
+      repository = if (source_type == "GitHub") repository else NA_character_,
+      ref = if (source_type == "GitHub") ref else NA_character_
     )
   )
 
