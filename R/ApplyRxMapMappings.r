@@ -5,7 +5,11 @@
 #' participant identifiers in longitudinal data.
 #'
 #' @param data A data frame containing medication variables.
-#' @param RxMapFile Path to the RxMap Excel results workbook.
+#' @param RxMapFile Optional path to the RxMap Excel results workbook. Use
+#'   either `RxMapFile` or `Mappings`.
+#' @param Mappings Optional mapping object returned by
+#'   `ReadRxMapMappings()`. When supplied, this exact reviewed object is used
+#'   and `RxMapFile` is not read again.
 #' @param MedicationPrefix Prefix identifying medication variables.
 #' @param MedicationColumns Optional explicit medication column names.
 #' @param KeepIDColumns Optional identifiers retained for readable QA. These
@@ -21,7 +25,8 @@
 #' @return A keyed feature data frame, or a detailed named list.
 ApplyRxMapMappings <- function(
     data,
-    RxMapFile,
+    RxMapFile = NULL,
+    Mappings = NULL,
     MedicationPrefix = "other_name",
     MedicationColumns = NULL,
     KeepIDColumns = NULL,
@@ -60,13 +65,45 @@ ApplyRxMapMappings <- function(
     )
   }
 
-  Mappings <- ReadRxMapMappings(
-    RxMapFile = RxMapFile,
-    DrugSheet = DrugSheet,
-    IngredientSheet = IngredientSheet,
-    ATCSheet = ATCSheet,
-    ExcludeDrugs = ExcludeDrugs
-  )
+  if (is.null(Mappings) && is.null(RxMapFile)) {
+    stop(
+      "Supply either `Mappings` or `RxMapFile`.",
+      call. = FALSE
+    )
+  }
+
+  if (is.null(Mappings)) {
+    Mappings <- ReadRxMapMappings(
+      RxMapFile = RxMapFile,
+      DrugSheet = DrugSheet,
+      IngredientSheet = IngredientSheet,
+      ATCSheet = ATCSheet,
+      ExcludeDrugs = ExcludeDrugs
+    )
+  } else {
+    required_mapping_tables <- c("DrugMap", "IngredientMap", "ATCMap")
+    missing_mapping_tables <- setdiff(
+      required_mapping_tables,
+      names(Mappings)
+    )
+
+    if (length(missing_mapping_tables) > 0L) {
+      stop(
+        "`Mappings` is missing: ",
+        paste(missing_mapping_tables, collapse = ", "),
+        call. = FALSE
+      )
+    }
+
+    if (!is.null(ExcludeDrugs)) {
+      Mappings$DrugMap <- Mappings$DrugMap %>%
+        dplyr::filter(!(Drug %in% ExcludeDrugs))
+      Mappings$IngredientMap <- Mappings$IngredientMap %>%
+        dplyr::filter(!(Drug %in% ExcludeDrugs))
+      Mappings$ATCMap <- Mappings$ATCMap %>%
+        dplyr::filter(!(Drug %in% ExcludeDrugs))
+    }
+  }
 
   df_Base <- tibble::tibble(.RxMapRowID = seq_len(nrow(data))) %>%
     dplyr::bind_cols(

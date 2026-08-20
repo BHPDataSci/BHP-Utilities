@@ -40,7 +40,7 @@ merge key and remains unique even when `record_id` repeats across visits.
 ```r
 RxMapResult <- ApplyRxMapMappings(
   data = df_Raw,
-  RxMapFile = "automatic_mappings.xlsx",
+  Mappings = Mappings,
   KeepIDColumns = c("record_id", "redcap_event_name"),
   ReturnDetails = TRUE
 )

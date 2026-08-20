@@ -87,6 +87,21 @@ RxMapResult <- ApplyRxMapMappings(
   ReturnDetails = TRUE
 )
 
+Mappings <- ReadRxMapMappings(fn_RxMap)
+RxMapResultFromMappings <- ApplyRxMapMappings(
+  data = df_Raw,
+  Mappings = Mappings,
+  KeepIDColumns = c("record_id", "visit"),
+  ReturnDetails = TRUE
+)
+
+stopifnot(
+  identical(
+    RxMapResultFromMappings$Features,
+    RxMapResult$Features
+  )
+)
+
 df_Features <- RxMapResult$Features
 stopifnot(
   nrow(df_Features) == nrow(df_Raw),
